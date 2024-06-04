@@ -19,9 +19,9 @@ class ArticlesSpider(SitemapSpider):
     ]
     custom_settings = {
         "ROBOTSTXT_OBEY": False,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-        "CONCURRENT_REQUESTS": 1,
-        "COOKIES_ENABLED": True,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 10,
+        "CONCURRENT_REQUESTS": 10,
+        "COOKIES_ENABLED": False,
         "DOWNLOADER_MIDDLEWARES": {
             "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
             "scrapy_user_agents.middlewares.RandomUserAgentMiddleware": 400,
@@ -39,10 +39,6 @@ class ArticlesSpider(SitemapSpider):
         "CLOSESPIDER_ERRORCOUNT": 1,
         "DOWNLOAD_DELAY": 0.2,
         "DOWNLOAD_TIMEOUT": 600,
-        "AUTOTHROTTLE_ENABLED": True,
-        "AUTOTHROTTLE_START_DELAY": 0.2,
-        "AUTOTHROTTLE_TARGET_CONCURRENCY": 1,
-        "AUTOTHROTTLE_MAX_DELAY": 5,
         "DEFAULT_REQUEST_HEADERS": {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -62,54 +58,122 @@ class ArticlesSpider(SitemapSpider):
     }
 
     def parse_article(self, response):
-        # TODO: fix this shit
-        # plan: split into four cases
-        # 1) typical articles
-        # 2) ytv articles
-        # 3) features
-        # 4) all other cases just skip (should be very small percentage)
+        article_item = Article()
+        article_item["url"] = response.url
 
-        pass
+        # Handle YDN "Features"
+        if "features.yaledailynews.com" in response.url:
+            date = response.css("div.publish-date::text").get().strip()
+            article_item["date"] = pd.to_datetime(
+                date.replace("Published on", "").strip()
+            ).strftime("%Y-%m-%d %H:%M:%S")
 
-        # title = response.css("div.article-header > h1::text").get()
-        # if "/ytv" not in response.url and title:
-        #     article_item = Article()
+            article_item["article_type"] = "Feature"
 
-        #     article_item["url"] = response.url
+            title = response.css("h2.overlay.overlay-title::text").getall()
+            article_item["title"] = unidecode(" ".join(title).strip())
 
-        #     date = response.css("date::text").get()
-        #     article_item["date"] = (
-        #         pd.to_datetime(date.replace("|", "").strip()).strftime(
-        #             "%Y-%m-%d %H:%M:%S"
-        #         )
-        #         if date
-        #         else None
-        #     )
+            article_item["subtitle"] = None
 
-        #     article_item["title"] = unidecode(title.strip()) if title else None
+            metadata = response.css(
+                "meta[name^='twitter:data']::attr(content)"
+            ).getall()
+            article_item["estimated_reading_time_minutes"] = None
+            for data in metadata:
+                if "minute" in data:
+                    article_item["estimated_reading_time_minutes"] = int(
+                        data.split(" ")[0].strip()
+                    )
+                    break
 
-        #     subtitle = response.css("div.article-header > p.subtitle::text").get()
-        #     article_item["subtitle"] = unidecode(subtitle.strip()) if subtitle else None
+            content = [
+                remove_tags(p).strip()
+                for p in response.css("div.span8.col > p").getall()
+            ]
+            article_item["content"] = (
+                "\n".join([unidecode(p.strip()) for p in content if p])
+                if content
+                else None
+            )
 
-        #     metadata = response.css(
-        #         "meta[name^='twitter:data']::attr(content)"
-        #     ).getall()
-        #     article_item["estimated_reading_time_minutes"] = None
-        #     for data in metadata:
-        #         if "minute" in data:
-        #             article_item["estimated_reading_time_minutes"] = int(
-        #                 data.split(" ")[0].strip()
-        #             )
-        #             break
+        # Handle YTV blogs
+        elif response.css("div.ytv-title"):
+            date = response.css("date::text").get().strip()
+            article_item["date"] = pd.to_datetime(
+                date.replace("|", "").strip()
+            ).strftime("%Y-%m-%d %H:%M:%S")
 
-        #     content = [
-        #         remove_tags(p).strip()
-        #         for p in response.css("section.article-text > p").getall()
-        #     ]
-        #     article_item["content"] = (
-        #         "\n".join([unidecode(p) for p in content if p]) if content else None
-        #     )
+            article_item["article_type"] = "YTV"
 
-        #     yield article_item
-        # else:
-        #     self.logger.info(f"Skipping {response.url}")
+            article_item["title"] = unidecode(
+                response.css("div.ytv-title::text").get().strip()
+            )
+
+            article_item["subtitle"] = None
+
+            metadata = response.css(
+                "meta[name^='twitter:data']::attr(content)"
+            ).getall()
+            article_item["estimated_reading_time_minutes"] = None
+            for data in metadata:
+                if "minute" in data:
+                    article_item["estimated_reading_time_minutes"] = int(
+                        data.split(" ")[0].strip()
+                    )
+                    break
+
+            content = response.css("p[id='ytv-article-blurb']::text").get()
+            article_item["content"] = unidecode(content.strip()) if content else None
+
+        # Handle "typical" articles
+        elif response.css("div.article-header > h1"):
+            article_item["date"] = pd.to_datetime(
+                response.css("date::text").get().strip()
+            ).strftime("%Y-%m-%d %H:%M:%S")
+
+            article_item["article_type"] = "Regular"
+
+            title = response.css("div.article-header > h1::text").get()
+            article_item["title"] = unidecode(title.strip()) if title else None
+
+            subtitle = response.css("div.article-header > p.subtitle::text").get()
+            article_item["subtitle"] = unidecode(subtitle.strip()) if subtitle else None
+
+            metadata = response.css(
+                "meta[name^='twitter:data']::attr(content)"
+            ).getall()
+            article_item["estimated_reading_time_minutes"] = None
+            for data in metadata:
+                if "minute" in data:
+                    article_item["estimated_reading_time_minutes"] = int(
+                        data.split(" ")[0].strip()
+                    )
+                    break
+
+            content = [
+                remove_tags(p).strip()
+                for p in response.css("section.article-text > p").getall()
+            ]
+            article_item["content"] = (
+                "\n".join([unidecode(p.strip()) for p in content if p])
+                if content
+                else None
+            )
+
+        # Ignore everything else, edge cases should be rare
+        else:
+            self.logger.info(f"Skipping {response.url}")
+            return
+
+        # Hacky preprocessing before yielding the item
+        if article_item["title"] is not None:
+            if article_item["title"] == "" or article_item["title"].strip() == "":
+                article_item["title"] = None
+        if article_item["subtitle"] is not None:
+            if article_item["subtitle"] == "" or article_item["subtitle"].strip() == "":
+                article_item["subtitle"] = None
+        if article_item["content"] is not None:
+            if article_item["content"] == "" or article_item["content"].strip() == "":
+                article_item["content"] = None
+
+        yield article_item

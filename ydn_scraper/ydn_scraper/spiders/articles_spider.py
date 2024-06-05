@@ -19,8 +19,8 @@ class ArticlesSpider(SitemapSpider):
     ]
     custom_settings = {
         "ROBOTSTXT_OBEY": False,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 10,
-        "CONCURRENT_REQUESTS": 10,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+        "CONCURRENT_REQUESTS": 1,
         "COOKIES_ENABLED": False,
         "DOWNLOADER_MIDDLEWARES": {
             "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
@@ -32,13 +32,17 @@ class ArticlesSpider(SitemapSpider):
         "DEPTH_PRIORITY": 1,
         "SCHEDULER_DISK_QUEUE": "scrapy.squeues.PickleFifoDiskQueue",
         "SCHEDULER_MEMORY_QUEUE": "scrapy.squeues.FifoMemoryQueue",
-        "RETRY_TIMES": 1,
-        "RETRY_HTTP_CODES": [500, 502, 503, 504, 400, 403, 404, 408, 429],
+        "RETRY_TIMES": 5,
+        "RETRY_HTTP_CODES": [500, 502, 503, 504, 400, 403, 408, 429],
         "LOG_LEVEL": "INFO",
         "ITEM_PIPELINES": {},
         "CLOSESPIDER_ERRORCOUNT": 1,
-        "DOWNLOAD_DELAY": 0.2,
+        "DOWNLOAD_DELAY": 1,
         "DOWNLOAD_TIMEOUT": 600,
+        "AUTOTHROTTLE_ENABLED": True,
+        "AUTOTHROTTLE_START_DELAY": 1,
+        "AUTOTHROTTLE_TARGET_CONCURRENCY": 1,
+        "AUTOTHROTTLE_MAX_DELAY": 10,
         "DEFAULT_REQUEST_HEADERS": {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -63,10 +67,14 @@ class ArticlesSpider(SitemapSpider):
 
         # Handle YDN "Features"
         if "features.yaledailynews.com" in response.url:
-            date = response.css("div.publish-date::text").get().strip()
-            article_item["date"] = pd.to_datetime(
-                date.replace("Published on", "").strip()
-            ).strftime("%Y-%m-%d %H:%M:%S")
+            date = response.css("div.publish-date::text").get()
+            article_item["date"] = (
+                pd.to_datetime(date.replace("Published on", "").strip()).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                if date
+                else None
+            )
 
             article_item["article_type"] = "Feature"
 

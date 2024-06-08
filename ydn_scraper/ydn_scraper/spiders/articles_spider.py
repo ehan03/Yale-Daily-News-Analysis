@@ -67,79 +67,19 @@ class ArticlesSpider(SitemapSpider):
 
         # Handle YDN "Features"
         if "features.yaledailynews.com" in response.url:
-            date = response.css("div.publish-date::text").get()
-            article_item["date"] = (
-                pd.to_datetime(date.replace("Published on", "").strip()).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                if date
-                else None
-            )
-
-            article_item["article_type"] = "Feature"
-
-            title = response.css("h2.overlay.overlay-title::text").getall()
-            article_item["title"] = unidecode(" ".join(title).strip())
-
-            article_item["subtitle"] = None
-
-            metadata = response.css(
-                "meta[name^='twitter:data']::attr(content)"
-            ).getall()
-            article_item["estimated_reading_time_minutes"] = None
-            for data in metadata:
-                if "minute" in data:
-                    article_item["estimated_reading_time_minutes"] = int(
-                        data.split(" ")[0].strip()
-                    )
-                    break
-
-            content = [
-                remove_tags(p).strip()
-                for p in response.css("div.span8.col > p").getall()
-            ]
-            article_item["content"] = (
-                "\n".join([unidecode(p.strip()) for p in content if p])
-                if content
-                else None
-            )
+            self.logger.info(f"Skipping {response.url}")
+            return
 
         # Handle YTV blogs
         elif response.css("div.ytv-title"):
-            date = response.css("date::text").get().strip()
-            article_item["date"] = pd.to_datetime(
-                date.replace("|", "").strip()
-            ).strftime("%Y-%m-%d %H:%M:%S")
-
-            article_item["article_type"] = "YTV"
-
-            article_item["title"] = unidecode(
-                response.css("div.ytv-title::text").get().strip()
-            )
-
-            article_item["subtitle"] = None
-
-            metadata = response.css(
-                "meta[name^='twitter:data']::attr(content)"
-            ).getall()
-            article_item["estimated_reading_time_minutes"] = None
-            for data in metadata:
-                if "minute" in data:
-                    article_item["estimated_reading_time_minutes"] = int(
-                        data.split(" ")[0].strip()
-                    )
-                    break
-
-            content = response.css("p[id='ytv-article-blurb']::text").get()
-            article_item["content"] = unidecode(content.strip()) if content else None
+            self.logger.info(f"Skipping {response.url}")
+            return
 
         # Handle "typical" articles
         elif response.css("div.article-header > h1"):
             article_item["date"] = pd.to_datetime(
                 response.css("date::text").get().strip()
             ).strftime("%Y-%m-%d %H:%M:%S")
-
-            article_item["article_type"] = "Regular"
 
             title = response.css("div.article-header > h1::text").get()
             article_item["title"] = unidecode(title.strip()) if title else None
